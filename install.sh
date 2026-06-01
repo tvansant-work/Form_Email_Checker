@@ -1,81 +1,67 @@
 #!/bin/bash
-echo "==========================================="
-echo "   Installing SEQTA Form Checker App...    "
-echo "==========================================="
 
-# ======================================================
+# Configuration
 GITHUB_USER="tvansant-work"
 GITHUB_REPO="Form_Email_Checker"
+APP_NAME="Form_Checker"
 BRANCH="main"
-# ======================================================
+RAW_BASE="https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH"
+SHORTCUT="$HOME/Desktop/Form Checker.command"
+BASE_DIR="$HOME/Library/Application Support/$APP_NAME"
 
-APP_DIR="$HOME/.form_checker_app"
-VENV_DIR="$APP_DIR/venv"
-DESKTOP_DIR="$HOME/Desktop"
-APP_NAME="Form Checker.app"
+echo "=================================================="
+echo "  Form Checker - Installer"
+echo "=================================================="
 
-# 1. Create a hidden folder for the app's internal files
-mkdir -p "$APP_DIR"
-
-echo "Downloading files from GitHub..."
-curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/form_checker.py" -o "$APP_DIR/form_checker.py"
-curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/requirements.txt" -o "$APP_DIR/requirements.txt"
-curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/launcher.sh" -o "$APP_DIR/launcher.sh"
-curl -sSL --fail "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/app_icon.png" -o "$APP_DIR/app_icon.png" || echo "No icon found on GitHub, using default."
-
-echo "Setting up Python environment (this may take a minute)..."
-if ! command -v python3 &> /dev/null
-then
-    echo "Python3 could not be found. Please ensure Python3 is installed on your Mac."
-    exit
+# 1. Setup folder and Python environment
+echo ""
+echo "Step 1/3: Preparing Python environment..."
+mkdir -p "$BASE_DIR"
+cd "$BASE_DIR"
+if [ ! -d "venv" ]; then
+    python3 -m venv venv
 fi
 
-# 2. Create the virtual environment and install requirements
-python3 -m venv "$VENV_DIR"
-source "$VENV_DIR/bin/activate"
-pip install --upgrade pip > /dev/null 2>&1
-echo "Installing Pandas and OpenPyXL..."
-pip install -r "$APP_DIR/requirements.txt" > /dev/null 2>&1
+# 2. Download all app files from GitHub
+echo ""
+echo "Step 2/3: Downloading app files from GitHub..."
+curl -s -L -o form_checker.py "$RAW_BASE/form_checker.py"
+curl -s -L -o requirements.txt   "$RAW_BASE/requirements.txt"
+curl -s -L -o app_icon.png       "$RAW_BASE/app_icon.png"
 
-echo "Creating Desktop App Shortcut..."
-MAC_APP_PATH="$DESKTOP_DIR/$APP_NAME"
+curl -s -L -o launcher.sh "$RAW_BASE/launcher.sh"
+chmod +x launcher.sh
 
-# Clean up any old versions
-rm -rf "$MAC_APP_PATH" 
+echo "  form_checker.py  ($(wc -c < form_checker.py | tr -d ' ') bytes)"
+echo "  requirements.txt"
+echo "  app_icon.png"
+echo "  launcher.sh"
 
-# 3. Build the macOS .app bundle structure
-mkdir -p "$MAC_APP_PATH/Contents/MacOS"
-mkdir -p "$MAC_APP_PATH/Contents/Resources"
+# 3. Install dependencies
+echo ""
+echo "  Installing Python dependencies..."
+source venv/bin/activate
+pip install -r requirements.txt --quiet
+./venv/bin/pip install pyobjc-framework-Cocoa --quiet
 
-# Put launcher in the app bundle
-cp "$APP_DIR/launcher.sh" "$MAC_APP_PATH/Contents/MacOS/launcher"
-chmod +x "$MAC_APP_PATH/Contents/MacOS/launcher"
+# 4. Create Desktop Shortcut pointing to launcher.sh
+echo ""
+echo "Step 3/3: Creating Desktop Shortcut..."
+echo "\"$BASE_DIR/launcher.sh\"" > "$SHORTCUT"
+chmod +x "$SHORTCUT"
 
-# 4. Generate the proper Mac Icon (.icns) from the PNG
-if [ -f "$APP_DIR/app_icon.png" ]; then
-    sips -s format icns "$APP_DIR/app_icon.png" --out "$MAC_APP_PATH/Contents/Resources/applet.icns" > /dev/null 2>&1
-fi
+# 5. Apply Icon
+./venv/bin/python3 - << 'PYEOF'
+import Cocoa, os
+icon_path = os.path.expanduser("~/Library/Application Support/Form_Checker/app_icon.png")
+file_path = os.path.expanduser("~/Desktop/Form Checker.command")
+if os.path.exists(icon_path) and os.path.exists(file_path):
+    img = Cocoa.NSImage.alloc().initWithContentsOfFile_(icon_path)
+    if img: Cocoa.NSWorkspace.sharedWorkspace().setIcon_forFile_options_(img, file_path, 0)
+PYEOF
 
-# 5. Create Info.plist to tell macOS how to run the app
-cat << 'EOF' > "$MAC_APP_PATH/Contents/Info.plist"
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleIconFile</key>
-    <string>applet.icns</string>
-    <key>CFBundleExecutable</key>
-    <string>launcher</string>
-    <key>CFBundleName</key>
-    <string>Form Checker</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.school.formchecker</string>
-</dict>
-</plist>
-EOF
-
-echo "==========================================="
-echo " Installation Complete! "
-echo " Look for 'Form Checker' on your Desktop."
-echo " You can now close this Terminal window."
-echo "==========================================="
+echo "=================================================="
+echo "  Installation Complete!"
+echo "  Look for 'Form Checker.command' on your Desktop."
+echo "  You can now close this Terminal window."
+echo "=================================================="
