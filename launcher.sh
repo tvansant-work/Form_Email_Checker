@@ -57,5 +57,12 @@ if [ -n "$UPDATED_FILES" ]; then
     osascript -e "display alert \"Form Checker Updated\" message \"$APPLESCRIPT_MSG\" as informational"
 fi
 
+# --- THE FIXES ARE HERE ---
+# 1. Change directory to the app folder so Python knows exactly where it is
+cd "$APP_DIR"
+
+# 2. Activate the virtual environment
 source "$APP_DIR/venv/bin/activate"
-python3 "$APP_DIR/form_checker.py"
+
+# 3. Force absolute path to the correct Python, and log any invisible errors to the Desktop!
+"$APP_DIR/venv/bin/python3" "$APP_DIR/form_checker.py" > "$HOME/Desktop/form_checker_log.txt" 2>&1
