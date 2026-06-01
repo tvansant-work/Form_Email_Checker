@@ -1,7 +1,8 @@
 #!/bin/bash
+echo "==========================================="
+echo "   Installing SEQTA Form Checker App...    "
+echo "==========================================="
 
-# ======================================================
-# NOTE: Update these variables to match your GitHub!
 # ======================================================
 GITHUB_USER="tvansant-work"
 GITHUB_REPO="Form_Email_Checker"
@@ -9,68 +10,72 @@ BRANCH="main"
 # ======================================================
 
 APP_DIR="$HOME/.form_checker_app"
-MAC_APP_PATH="$HOME/Desktop/Form Checker.app"
-UPDATED_FILES=""
+VENV_DIR="$APP_DIR/venv"
+DESKTOP_DIR="$HOME/Desktop"
+APP_NAME="Form Checker.app"
 
-# Function to securely download and check for updates
-check_update() {
-    FILE_NAME=$1
-    URL="https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/$FILE_NAME"
-    TMP_FILE="$APP_DIR/${FILE_NAME}.tmp"
-    
-    # Download file securely (-s silent, -f fail silently on missing file, -L follow redirects)
-    if curl -sSfL "$URL" -o "$TMP_FILE" 2>/dev/null; then
-        # If local file doesn't exist, or is different from the newly downloaded one
-        if [ ! -f "$APP_DIR/$FILE_NAME" ] || ! cmp -s "$TMP_FILE" "$APP_DIR/$FILE_NAME"; then
-            mv "$TMP_FILE" "$APP_DIR/$FILE_NAME"
-            # Add to our list of updated files with a newline
-            UPDATED_FILES="$UPDATED_FILES"$'\n'"- $FILE_NAME"
-            return 0 # True, it updated
-        else
-            # File is identical, delete the temp file
-            rm -f "$TMP_FILE"
-        fi
-    else
-        # Download failed (e.g., offline or file missing on GitHub), clean up
-        rm -f "$TMP_FILE"
-    fi
-    return 1 # False, no update
-}
+# 1. Create a hidden folder for the app's internal files
+mkdir -p "$APP_DIR"
 
-# 1. Check basic files for updates
-check_update "form_checker.py"
-check_update "install.sh"
+echo "Downloading files from GitHub..."
+curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/form_checker.py" -o "$APP_DIR/form_checker.py"
+curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/requirements.txt" -o "$APP_DIR/requirements.txt"
+curl -sSL "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/launcher.sh" -o "$APP_DIR/launcher.sh"
+curl -sSL --fail "https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/$BRANCH/app_icon.png" -o "$APP_DIR/app_icon.png" || echo "No icon found on GitHub, using default."
 
-# 2. Check requirements and silently update Python packages if changed
-if check_update "requirements.txt"; then
-    source "$APP_DIR/venv/bin/activate"
-    pip install -r "$APP_DIR/requirements.txt" > /dev/null 2>&1
+echo "Setting up Python environment (this may take a minute)..."
+if ! command -v python3 &> /dev/null
+then
+    echo "Python3 could not be found. Please ensure Python3 is installed on your Mac."
+    exit
 fi
 
-# 3. Check icon and update the Mac App bundle if changed
-if check_update "app_icon.png"; then
-    if [ -d "$MAC_APP_PATH" ]; then
-        sips -s format icns "$APP_DIR/app_icon.png" --out "$MAC_APP_PATH/Contents/Resources/applet.icns" > /dev/null 2>&1
-        touch "$MAC_APP_PATH" # Forces macOS to refresh the icon visually
-    fi
+# 2. Create the virtual environment and install requirements
+python3 -m venv "$VENV_DIR"
+source "$VENV_DIR/bin/activate"
+pip install --upgrade pip > /dev/null 2>&1
+echo "Installing Pandas and OpenPyXL..."
+pip install -r "$APP_DIR/requirements.txt" > /dev/null 2>&1
+
+echo "Creating Desktop App Shortcut..."
+MAC_APP_PATH="$DESKTOP_DIR/$APP_NAME"
+
+# Clean up any old versions
+rm -rf "$MAC_APP_PATH" 
+
+# 3. Build the macOS .app bundle structure
+mkdir -p "$MAC_APP_PATH/Contents/MacOS"
+mkdir -p "$MAC_APP_PATH/Contents/Resources"
+
+# Put launcher in the app bundle
+cp "$APP_DIR/launcher.sh" "$MAC_APP_PATH/Contents/MacOS/launcher"
+chmod +x "$MAC_APP_PATH/Contents/MacOS/launcher"
+
+# 4. Generate the proper Mac Icon (.icns) from the PNG
+if [ -f "$APP_DIR/app_icon.png" ]; then
+    sips -s format icns "$APP_DIR/app_icon.png" --out "$MAC_APP_PATH/Contents/Resources/applet.icns" > /dev/null 2>&1
 fi
 
-# 4. Check launcher itself and update the running App bundle if changed
-if check_update "launcher.sh"; then
-    if [ -d "$MAC_APP_PATH" ]; then
-        # Safely replace the executable script by removing it first
-        rm -f "$MAC_APP_PATH/Contents/MacOS/launcher"
-        cp "$APP_DIR/launcher.sh" "$MAC_APP_PATH/Contents/MacOS/launcher"
-        chmod +x "$MAC_APP_PATH/Contents/MacOS/launcher"
-    fi
-fi
+# 5. Create Info.plist to tell macOS how to run the app
+cat << 'EOF' > "$MAC_APP_PATH/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIconFile</key>
+    <string>applet.icns</string>
+    <key>CFBundleExecutable</key>
+    <string>launcher</string>
+    <key>CFBundleName</key>
+    <string>Form Checker</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.school.formchecker</string>
+</dict>
+</plist>
+EOF
 
-# 5. Notify the user if updates occurred using a native Mac alert
-if [ -n "$UPDATED_FILES" ]; then
-    APPLESCRIPT_MSG="The following files were downloaded and applied:"$'\n'"$UPDATED_FILES"
-    osascript -e "display alert \"Form Checker Updated\" message \"$APPLESCRIPT_MSG\" as informational"
-fi
-
-# 6. Finally, activate the virtual environment and run the app
-source "$APP_DIR/venv/bin/activate"
-python3 "$APP_DIR/form_checker.py"
+echo "==========================================="
+echo " Installation Complete! "
+echo " Look for 'Form Checker' on your Desktop."
+echo " You can now close this Terminal window."
+echo "==========================================="
